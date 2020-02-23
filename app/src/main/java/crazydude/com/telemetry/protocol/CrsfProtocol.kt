@@ -14,6 +14,9 @@ class CrsfProtocol : Protocol {
     private var buffer = ArrayList<Int>()
     val crC8 = CRC8()
 
+    private var gpsLatFilterBuffer = ArrayList<Int>()
+    private var gpsLongFilterBuffer = ArrayList<Int>()
+
     companion object {
 
         // Device or sync byte:Length:Type:Payload:CRC
@@ -33,6 +36,9 @@ class CrsfProtocol : Protocol {
         private const val GPS_PACKET_LEN = 16
         private const val ATTITUDE_PACKET_LEN = 7
         private const val BATTERY_PACKET_LEN = 8
+
+        private const val GPS_FILTER_BUFFER_SIZE = 2
+        private const val GPS_FILTER_VARIANCE = 1000000
     }
 
     override fun process(data: Int) {
@@ -124,42 +130,74 @@ class CrsfProtocol : Protocol {
                         val heading = data.short
                         val altitude = data.short
                         val satellites = data.get()
-                        dataDecoder.decodeData(
-                            Protocol.Companion.TelemetryData(
-                                GPS_SATELLITES,
-                                satellites.toInt()
+                        var latMatch = 0
+                        var index = 0
+                        while (index < gpsLatFilterBuffer.size) {
+                            if ((latitude <= gpsLatFilterBuffer[index] + GPS_FILTER_VARIANCE) &&
+                                (latitude >= gpsLatFilterBuffer[index] - GPS_FILTER_VARIANCE))
+                            {
+                                latMatch = 1
+                                break
+                            }
+                            index++
+                        }
+                        var longMatch = 0
+                        index = 0
+                        while (index < gpsLongFilterBuffer.size) {
+                            if ((longitude <= gpsLongFilterBuffer[index] + GPS_FILTER_VARIANCE) &&
+                                (longitude >= gpsLongFilterBuffer[index] - GPS_FILTER_VARIANCE))
+                            {
+                                longMatch = 1
+                                break
+                            }
+                            index++
+                        }
+                        if ((latMatch == 1) && (longMatch == 1)) {
+                            dataDecoder.decodeData(
+                                Protocol.Companion.TelemetryData(
+                                    GPS_SATELLITES,
+                                    satellites.toInt()
+                                )
                             )
-                        )
-                        dataDecoder.decodeData(
-                            Protocol.Companion.TelemetryData(
-                                GPS_LATITUDE,
-                                latitude
+                            dataDecoder.decodeData(
+                                Protocol.Companion.TelemetryData(
+                                    GPS_LATITUDE,
+                                    latitude
+                                )
                             )
-                        )
-                        dataDecoder.decodeData(
-                            Protocol.Companion.TelemetryData(
-                                GPS_LONGITUDE,
-                                longitude
+                            dataDecoder.decodeData(
+                                Protocol.Companion.TelemetryData(
+                                    GPS_LONGITUDE,
+                                    longitude
+                                )
                             )
-                        )
-                        dataDecoder.decodeData(
-                            Protocol.Companion.TelemetryData(
-                                GSPEED,
-                                groundSpeed.toInt()
+                            dataDecoder.decodeData(
+                                Protocol.Companion.TelemetryData(
+                                    GSPEED,
+                                    groundSpeed.toInt()
+                                )
                             )
-                        )
-                        dataDecoder.decodeData(
-                            Protocol.Companion.TelemetryData(
-                                HEADING,
-                                heading.toInt()
+                            dataDecoder.decodeData(
+                                Protocol.Companion.TelemetryData(
+                                    HEADING,
+                                    heading.toInt()
+                                )
                             )
-                        )
-                        dataDecoder.decodeData(
-                            Protocol.Companion.TelemetryData(
-                                ALTITUDE,
-                                altitude.toInt()
+                            dataDecoder.decodeData(
+                                Protocol.Companion.TelemetryData(
+                                    ALTITUDE,
+                                    altitude.toInt()
+                                )
                             )
-                        )
+                        }
+                        gpsLatFilterBuffer.add(latitude)
+                        if (gpsLatFilterBuffer.size > GPS_FILTER_BUFFER_SIZE) {
+                            gpsLatFilterBuffer.removeAt(0)
+                        }
+                        gpsLongFilterBuffer.add(longitude)
+                        if (gpsLongFilterBuffer.size > GPS_FILTER_BUFFER_SIZE) {
+                            gpsLongFilterBuffer.removeAt(0)
+                        }
                     }
                 }
                 FLIGHT_MODE.toByte() -> {
